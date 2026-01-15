@@ -27,10 +27,6 @@ def rescore_contest(self, contest_key):
 
 @shared_task(bind=True)
 def run_jplag(self, contest_key):
-    moss_api_key = settings.MOSS_API_KEY
-    if moss_api_key is None:
-        raise ImproperlyConfigured('No MOSS API Key supplied')
-
     contest = Contest.objects.get(key=contest_key)
     ContestJplag.objects.filter(contest=contest).delete()
 

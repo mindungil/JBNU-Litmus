@@ -711,7 +711,7 @@ class ContestMixin(object):
         context['meta_description'] = self.object.summary or metadata[0]
         context['og_image'] = self.object.og_image or metadata[1]
         # MOSS_API_KEY 는 더이상 사용하지 않음 -> 표절 검사를 JPlag로 대체
-        context['has_moss_api_key'] = settings.MOSS_API_KEY is not None
+        # context['has_moss_api_key'] = settings.MOSS_API_KEY is not None
         context['logo_override_image'] = self.object.logo_override_image
         # if not context['logo_override_image'] and self.object.organizations.count() == 1:
         #     context['logo_override_image'] = self.object.organizations.first().logo_override_image
@@ -1412,8 +1412,8 @@ class ContestJplagMixin(ContestMixin, PermissionRequiredMixin):
 
     def get_object(self, queryset=None):
         contest = super().get_object(queryset)
-        if settings.MOSS_API_KEY is None or not contest.is_editable_by(self.request.user):
-            raise Http404()
+        # if settings.MOSS_API_KEY is None or not contest.is_editable_by(self.request.user):
+        #     raise Http404()
         return contest
 
 

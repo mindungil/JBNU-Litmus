@@ -12,10 +12,6 @@ class Command(BaseCommand):
         parser.add_argument('contest', help='the id of the contest')
 
     def handle(self, *args, **options):
-        jplag_api_key = settings.MOSS_API_KEY
-        if jplag_api_key is None:
-            self.stdout.write('No MOSS API Key supplied')
-            return
         contest = options['contest']
 
         for problem in Contest.objects.get(key=contest).problems.order_by('code'):
