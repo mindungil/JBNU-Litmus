@@ -84,8 +84,10 @@ hcpark_log_temp/
 
 site/resources/icons/problems_images/
 
-site/resources/jplag_reports/*
-!site/resources/jplag_reports/.gitkeep
+site/resources/jplag/*
+!site/resources/jplag/.gitkeep
+site/resources/static/jplag_reports/*
+!site/resources/static/jplag_reports/.gitkeep
 
 #settings.py (dev/service)
 site/dmoj/settings.py
