@@ -103,12 +103,18 @@
             </td>
             {% for result in results %}
             <td>
-                {% if result.submission_count %}
+                {% if result.submission_count and result.submission_count >= 2 and result.url %}
                 <a href="{{ result.url }}">{% trans trimmed count=result.submission_count %}
                     {{ count }} submission
                     {% pluralize %}
                     {{ count }} submissions
                     {% endtrans %}</a>
+                {% elif result.submission_count %}
+                {% trans trimmed count=result.submission_count %}
+                    {{ count }} submission
+                    {% pluralize %}
+                    {{ count }} submissions
+                    {% endtrans %}
                 {% else %}
                 {{ _('No submissions') }}
                 {% endif %}
