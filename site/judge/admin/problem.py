@@ -24,6 +24,7 @@ from django.shortcuts import render
 from django.urls import path, reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.html import format_html
+from django.template.response import TemplateResponse
 from django.utils.translation import gettext, gettext_lazy as _, ngettext
 
 from judge.models import (Judge, Language, LanguageLimit, Problem, ProblemClarification, 
@@ -684,10 +685,21 @@ class ProblemAdmin(VersionAdmin):
             return request.user.has_perm('judge.edit_own_problem')
         return obj.is_editable_by(request.user)
 
-    def get_list_display_links(self, request, list_display):
-        if not self.has_change_permission(request):
-            return None
-        return super().get_list_display_links(request, list_display)
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        if object_id is not None and not self.has_change_permission(request):
+            context = dict(
+                self.admin_site.each_context(request),
+                opts=self.model._meta,
+                title=_('Permission denied'),
+                message=_('해당 문제를 수정할 권한이 없습니다.'),
+            )
+            return TemplateResponse(
+                request,
+                'admin/judge/problem/permission_denied.html',
+                context,
+                status=200,
+            )
+        return super().changeform_view(request, object_id, form_url, extra_context)
 
     def formfield_for_manytomany(self, db_field, request=None, **kwargs):
         if db_field.name == 'allowed_languages':
