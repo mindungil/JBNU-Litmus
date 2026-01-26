@@ -510,6 +510,7 @@ class ProblemAdmin(VersionAdmin):
         # (_('History'), {'fields': ('change_message',)}),
     )
     list_display = ['code', 'name', 'show_authors', 'points', 'public_status', 'encryption_status', 'show_public']
+    list_display_links = None
     ordering = ['code']
     search_fields = ('code', 'name', 'authors__user__username', 'curators__user__username')
     inlines = [LanguageLimitInline, ProblemDataInline, TestCaseInline, ProblemSolutionInline, ProblemClarificationInline] # [LanguageLimitInline, ProblemClarificationInline, ProblemSolutionInline, ProblemTranslationInline]
@@ -540,6 +541,25 @@ class ProblemAdmin(VersionAdmin):
         actions[name] = (func, name, desc)
 
         return actions
+
+    def get_list_display(self, request):
+        def code_link(obj):
+            if obj.is_editable_by(request.user):
+                url = reverse('admin:judge_problem_change', args=[obj.pk])
+                return format_html('<a href="{}">{}</a>', url, obj.code)
+            return obj.code
+
+        code_link.short_description = _('code')
+        code_link.admin_order_field = 'code'
+        return (
+            code_link,
+            'name',
+            'show_authors',
+            'points',
+            'public_status',
+            'encryption_status',
+            'show_public',
+        )
 
     def get_readonly_fields(self, request, obj=None):
         fields = self.readonly_fields
