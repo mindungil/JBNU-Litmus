@@ -549,7 +549,7 @@ class ProblemAdmin(VersionAdmin):
                 return format_html('<a href="{}">{}</a>', url, obj.code)
             return obj.code
 
-        code_link.short_description = _('code')
+        code_link.short_description = '문제 코드'
         code_link.admin_order_field = 'code'
         return (
             code_link,
