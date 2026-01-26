@@ -619,6 +619,7 @@ class Problem(models.Model):
             ('edit_all_problem', _('Edit all problems')),
             ('edit_public_problem', _('Edit all public problems')),
             ('view_all_problem', _('View all problems')),
+            ('view_testcase', _('Can view testcase')),
             ('manage_contest_problem', _('Manage contest problems')),
             ('problem_full_markup', _('Edit problems with full markup')),
             ('clone_problem', _('Clone problem')),
