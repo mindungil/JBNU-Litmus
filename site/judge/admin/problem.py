@@ -24,6 +24,7 @@ from django.shortcuts import render
 from django.urls import path, reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.html import format_html
+from django.template.response import TemplateResponse
 from django.utils.translation import gettext, gettext_lazy as _, ngettext
 
 from judge.models import (Judge, Language, LanguageLimit, Problem, ProblemClarification, 
@@ -57,7 +58,10 @@ class ProblemForm(ModelForm):
     
     def __init__(self, *args, **kwargs):
         super(ProblemForm, self).__init__(*args, **kwargs)
-        self.fields['authors'].widget.can_add_related = False
+        # authors는 readonly이므로 fields에 포함되지 않음
+        self.fields['curators'].widget.can_add_related = False
+        self.fields['curators'].label = 'TA'
+        self.fields['curators'].help_text = 'TA나 협업자에게 문제 편집 권한을 부여합니다. 제작자와 동일한 권한을 가지지만, 제작자로 표시되지 않습니다.'
         self.fields['testers'].widget.can_add_related = False
         self.fields['change_message'].widget.attrs.update({
             'placeholder': gettext('Describe the changes you made (optional)'),
@@ -229,7 +233,7 @@ class ProblemForm(ModelForm):
     class Meta:
         widgets = {
             'authors': AdminHeavySelect2MultipleWidget(data_view='profile_select2', attrs={'style': 'width: 100%; display: none;'}),
-            # 'curators': AdminHeavySelect2MultipleWidget(data_view='profile_select2', attrs={'style': 'width: 100%'}),
+            'curators': AdminHeavySelect2MultipleWidget(data_view='profile_select2', attrs={'style': 'width: 100%'}),
             'testers': AdminHeavySelect2MultipleWidget(data_view='profile_select2', attrs={'style': 'width: 100%'}),
             'banned_users': AdminHeavySelect2MultipleWidget(data_view='profile_select2',
                                                            attrs={'style': 'width: 100%'}),
@@ -237,6 +241,8 @@ class ProblemForm(ModelForm):
             'types': AdminSelect2MultipleWidget,
             'group': AdminSelect2Widget,
             'description': AdminMartorWidget(attrs={'data-markdownfy-url': reverse_lazy('problem_preview')}),
+            'sample_input': forms.Textarea(attrs={'rows': 4, 'style': 'width: 100%'}),
+            'sample_output': forms.Textarea(attrs={'rows': 4, 'style': 'width: 100%'}),
             'allowed_languages': CheckboxSelectMultipleWithSelectAll(),
         }
  
@@ -493,11 +499,15 @@ class ProblemAdmin(VersionAdmin):
     fieldsets = (
         ('문제 설정', {
             'fields': (
-                'code', 'name', 'date', 'authors', 'testers',
+                'code', 'name', 'date', 'authors', 'curators', 'testers',
                 ('is_encrypted', 'encryption_key'), 
                 'is_public',
-                'description', 
+                'is_contest_problem',
+                'description',
             ),
+        }),
+        ('입출력 예제', {
+            'fields': ('sample_input', 'sample_output'),
         }),
         # (_('Social Media'), {'classes': ('collapse',), 'fields': ('og_image', 'summary')}),
         (_('Taxonomy'), {'fields': ('group',)}),
@@ -508,6 +518,7 @@ class ProblemAdmin(VersionAdmin):
         # (_('History'), {'fields': ('change_message',)}),
     )
     list_display = ['code', 'name', 'show_authors', 'points', 'public_status', 'encryption_status', 'show_public']
+    list_display_links = None
     ordering = ['code']
     search_fields = ('code', 'name', 'authors__user__username', 'curators__user__username')
     inlines = [LanguageLimitInline, ProblemDataInline, TestCaseInline, ProblemSolutionInline, ProblemClarificationInline] # [LanguageLimitInline, ProblemClarificationInline, ProblemSolutionInline, ProblemTranslationInline]
@@ -539,11 +550,32 @@ class ProblemAdmin(VersionAdmin):
 
         return actions
 
+    def get_list_display(self, request):
+        def code_link(obj):
+            if obj.is_editable_by(request.user):
+                url = reverse('admin:judge_problem_change', args=[obj.pk])
+                return format_html('<a href="{}">{}</a>', url, obj.code)
+            return obj.code
+
+        code_link.short_description = _('code')
+        code_link.admin_order_field = 'code'
+        return (
+            code_link,
+            'name',
+            'show_authors',
+            'points',
+            'public_status',
+            'encryption_status',
+            'show_public',
+        )
+
     def get_readonly_fields(self, request, obj=None):
         fields = self.readonly_fields
-        fields += ('code',)
+        fields += ('code', 'authors',)
         if not request.user.has_perm('judge.change_public_visibility'):
             fields += ('is_public',)
+        if not request.user.has_perm('judge.manage_contest_problem'):
+            fields += ('is_contest_problem',)
         if not request.user.has_perm('judge.change_manually_managed'):
             fields += ('is_manually_managed',)
         if not request.user.has_perm('judge.problem_full_markup'):
@@ -551,6 +583,28 @@ class ProblemAdmin(VersionAdmin):
             if obj and obj.is_full_markup:
                 fields += ('description',)
         return fields
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super(ProblemAdmin, self).get_fieldsets(request, obj)
+        if request.user.has_perm('judge.manage_contest_problem'):
+            return fieldsets
+
+        filtered = []
+        for name, options in fieldsets:
+            fields = options.get('fields', ())
+            if isinstance(fields, (list, tuple)):
+                new_fields = []
+                for field in fields:
+                    if field == 'is_contest_problem':
+                        continue
+                    if isinstance(field, (list, tuple)):
+                        new_fields.append(tuple(f for f in field if f != 'is_contest_problem'))
+                    else:
+                        new_fields.append(field)
+                options = dict(options)
+                options['fields'] = tuple(new_fields)
+            filtered.append((name, options))
+        return tuple(filtered)
 
     # obj여부에 따라 달라지는 기능 구현
     def get_inlines(self, request, obj=None):
@@ -606,6 +660,10 @@ class ProblemAdmin(VersionAdmin):
 
     show_public.short_description = '문제 바로가기'
 
+    def view_on_site(self, obj):
+        # Keep the change-form "View on site" behavior identical to the changelist link.
+        return obj.get_absolute_url()
+
     def _rescore(self, request, problem_id):
         from judge.tasks import rescore_problem
         transaction.on_commit(rescore_problem.s(problem_id).delay)
@@ -639,12 +697,41 @@ class ProblemAdmin(VersionAdmin):
     make_private.short_description = _('Mark problems as private')
 
     def get_queryset(self, request):
-        return Problem.get_editable_problems(request.user).prefetch_related('authors__user')
+        if request.user.has_perm('judge.view_all_problem') or request.user.has_perm('judge.edit_all_problem'):
+            queryset = Problem.objects.all()
+        else:
+            queryset = Problem.get_editable_problems(request.user)
+
+        if not request.user.has_perm('judge.manage_contest_problem'):
+            queryset = queryset.filter(is_contest_problem=False)
+
+        return queryset.prefetch_related('authors__user')
+
+    def has_view_permission(self, request, obj=None):
+        if obj is None:
+            return request.user.has_perm('judge.view_all_problem') or request.user.has_perm('judge.edit_own_problem')
+        return obj.is_editable_by(request.user)
 
     def has_change_permission(self, request, obj=None):
         if obj is None:
             return request.user.has_perm('judge.edit_own_problem')
         return obj.is_editable_by(request.user)
+
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        if object_id is not None and not self.has_change_permission(request):
+            context = dict(
+                self.admin_site.each_context(request),
+                opts=self.model._meta,
+                title=_('Permission denied'),
+                message=_('해당 문제를 수정할 권한이 없습니다.'),
+            )
+            return TemplateResponse(
+                request,
+                'admin/judge/problem/permission_denied.html',
+                context,
+                status=200,
+            )
+        return super().changeform_view(request, object_id, form_url, extra_context)
 
     def formfield_for_manytomany(self, db_field, request=None, **kwargs):
         if db_field.name == 'allowed_languages':
@@ -654,13 +741,14 @@ class ProblemAdmin(VersionAdmin):
 
     def get_form(self, request, *args, **kwargs):
         form = super(ProblemAdmin, self).get_form(request,*args, **kwargs)
-        form.base_fields['authors'].queryset = Profile.objects.filter(user__username=request.user.username)
+        # authors는 readonly이므로 base_fields에 없음. save_related에서 자동 설정됨.
         form.base_fields['allowed_languages'].initial = Language.objects.all()
+        if not request.user.has_perm('judge.manage_contest_problem'):
+            form.base_fields.pop('is_contest_problem', None)
         return form
 
     def save_model(self, request, obj, form, change):
         # `organizations` will not appear in `cleaned_data` if user cannot edit it
-        form.cleaned_data['authors'] = Profile.objects.filter(user__username=request.user.username)
         # form.cleaned_data['allowed_languages'] = Language
         
         # if form.changed_data and 'organizations' in form.changed_data:
@@ -690,6 +778,13 @@ class ProblemAdmin(VersionAdmin):
             any(f in form.changed_data for f in ('is_public', 'points', 'partial'))
         ):
             self._rescore(request, obj.id)
+    
+    def save_related(self, request, form, formsets, change):
+        super(ProblemAdmin, self).save_related(request, form, formsets, change)
+        
+        # 새 문제 생성 시 현재 사용자를 authors로 설정
+        if not change:
+            form.instance.authors.set(Profile.objects.filter(user__username=request.user.username))
             
     def get_urls(self):
         return [

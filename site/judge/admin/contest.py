@@ -113,6 +113,13 @@ class ContestForm(ModelForm):
         self.fields['subject'].widget.can_add_related = False
         self.fields['subject'].widget.can_change_related = False
         self.fields['subject'].widget.can_delete_related = False
+        if 'school' in self.fields:
+            self.fields['school'].widget.can_add_related = False
+            self.fields['school'].widget.can_change_related = False
+            self.fields['school'].widget.can_delete_related = False
+        # curators 필드 레이블 변경
+        self.fields['curators'].label = 'TA'
+        self.fields['curators'].help_text = 'TA나 협업자에게 과제/대회 관리 권한을 부여합니다. 제작자와 동일한 권한을 가지지만, 제작자로 표시되지 않습니다.'
         # self.fields['banned_users'].widget.can_add_related = False
         # self.fields['view_contest_scoreboard'].widget.can_add_related = False
         
@@ -210,7 +217,7 @@ class ContestAdmin(VersionAdmin):
     fieldsets = (
         # (None, { 'classes':('collapse'),
         #     'fields': ('key', 'name' , 'authors', )}),
-        ('기본', {'fields': ('key', 'name' , 'authors', 'subject' )}),
+        ('기본', {'fields': ('key', 'name', 'authors', 'curators', 'subject', 'school')}),
         (_('Settings'), {'fields': ('is_visible', 'is_practice',)}),
         (_('Scheduling'), {'fields': ('start_time', 'end_time')}),
         (_('Details'), {'fields': ('description', )}),
@@ -283,7 +290,7 @@ class ContestAdmin(VersionAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         readonly = []
-        readonly += ['key']
+        readonly += ['key', 'authors']
         if not request.user.has_perm('judge.contest_rating'):
             readonly += ['is_rated', 'rate_all', 'rate_exclude']
         if not request.user.has_perm('judge.lock_contest'):
@@ -301,13 +308,12 @@ class ContestAdmin(VersionAdmin):
 
     def save_model(self, request, obj, form, change):
         # `private_contestants` and `organizations` will not appear in `cleaned_data` if user cannot edit it
-        form.cleaned_data['authors'] = Profile.objects.filter(user__username=request.user.username)
         if form.changed_data:
             if 'private_contestants' in form.changed_data:
                 obj.is_private = bool(form.cleaned_data['private_contestants'])
             # if 'organizations' in form.changed_data or 'classes' in form.changed_data:
             #     obj.is_organization_private = bool(form.cleaned_data['organizations'] or form.cleaned_data['classes'])
-            # if 'join_organizations' in form.cleaned_data:
+            # if 'join_organizations' in form.changed_data:
             #     obj.limit_join_organizations = bool(form.cleaned_data['join_organizations'])
 
         # `is_visible` will not appear in `cleaned_data` if user cannot edit it
@@ -331,6 +337,10 @@ class ContestAdmin(VersionAdmin):
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
+        
+        # 새 대회 생성 시 현재 사용자를 authors로 설정
+        if not change:
+            form.instance.authors.set(Profile.objects.filter(user__username=request.user.username))
         
         # Only rescored if we did not already do so in `save_model`
         if not self._rescored and any(formset.has_changed() for formset in formsets):
@@ -633,7 +643,7 @@ class CombinedContestParticipationFilter(FieldListFilter):
         self.params = params
 
     def expected_parameters(self):
-        return ['contest_name', 'is_public', 'is_assignment']
+        return ['contest_name', 'user_name', 'is_public', 'is_assignment']
 
     def choices(self, changelist):
         yield {
@@ -644,11 +654,15 @@ class CombinedContestParticipationFilter(FieldListFilter):
 
     def queryset(self, request, queryset):
         contest_name = request.GET.get('contest_name')
+        user_name = request.GET.get('user_name')
         is_public = request.GET.get('is_public')
         is_assignment = request.GET.get('is_assignment')
 
         if contest_name:
             queryset = queryset.filter(contest__name__icontains=contest_name)
+
+        if user_name:
+            queryset = queryset.filter(user__user__username__icontains=user_name)
 
         if is_public == 'True':
             queryset = queryset.filter(contest__is_visible=True)
