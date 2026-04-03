@@ -284,9 +284,10 @@ class ContestAdmin(VersionAdmin):
         if request.user.has_perm('judge.edit_all_contest'):
             return queryset
         else:
-            # return queryset.filter(Q(authors=request.profile) | Q(curators=request.profile)).distinct()
-            # 문제 탭의 선택 삭제와 같은 오류 [커밋 13397fee35bbfdcaee6ee0190ea7b921676303bc 참고]
-            return queryset.filter(Q(authors=request.profile) | Q(curators=request.profile))
+            editable_ids = Contest.objects.filter(
+                Q(authors=request.profile) | Q(curators=request.profile),
+            ).values('id')
+            return queryset.filter(id__in=editable_ids)
 
     def get_readonly_fields(self, request, obj=None):
         readonly = []
